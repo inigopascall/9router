@@ -1237,5 +1237,10 @@
     },
     "clientId": "hermes-cli",
     "tokenUrl": "https://portal.nousresearch.com/api/oauth/token"
+  },
+  "otterly": {
+    "baseUrl": "http://127.0.0.1:11445/v1/chat/completions",
+    "connectionBaseUrl": true,
+    "format": "openai"
   }
 }

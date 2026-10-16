@@ -8,6 +8,8 @@ import { planBulkAdd } from "@/shared/utils/bulkAdd";
 
 const BULK_PLACEHOLDER = `name1|sk-key1\nname2|sk-key2\nsk-key-only-auto-named`;
 
+const OTTERLY_DEFAULT_BASE_URL = "http://127.0.0.1:11445/v1";
+
 export default function AddApiKeyModal({ isOpen, provider, providerName, isCompatible, isAnthropic, authType, authHint, website, proxyPools, error, existingNames, onSave, onBulkDone, onClose }) {
   const NONE_PROXY_POOL_VALUE = "__none__";
   const isOllamaLocal = provider === "ollama-local";
@@ -20,6 +22,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
 
   const isAzure = provider === "azure";
   const isCloudflareAi = provider === "cloudflare-ai";
+  const isOtterly = provider === "otterly";
   // Capability, not identity: gating this on `provider === "bedrock"` left bedrock-xai with no
   // way to enter a profile at all, which is the same mistake as hardcoding the API-key exemption.
   const usesAwsCredentialForm =
@@ -45,6 +48,7 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [otterlyBaseUrl, setOtterlyBaseUrl] = useState(OTTERLY_DEFAULT_BASE_URL);
   const [bedrockData, setBedrockData] = useState({
     profile: "",
     region: "",
@@ -79,6 +83,9 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
     }
     if (isCloudflareAi) {
       return { accountId: cloudflareData.accountId };
+    }
+    if (isOtterly) {
+      return { baseUrl: otterlyBaseUrl.trim() || OTTERLY_DEFAULT_BASE_URL };
     }
     if (usesAwsCredentialForm) {
       // Only send what the user filled in: an empty `profile` would otherwise select profile
@@ -307,6 +314,15 @@ export default function AddApiKeyModal({ isOpen, provider, providerName, isCompa
           <p className="text-xs text-text-muted">
             Use a direct xAI API key from console.x.ai. This is separate from Grok Build OAuth.
           </p>
+        )}
+        {isOtterly && (
+          <Input
+            label="Base URL"
+            value={otterlyBaseUrl}
+            onChange={(e) => setOtterlyBaseUrl(e.target.value)}
+            placeholder={OTTERLY_DEFAULT_BASE_URL}
+            hint="The Otterly server's OpenAI-compatible base URL, ending in /v1. Any API key works unless that server has a key set."
+          />
         )}
         {isCookie && authHint && (
           <p className="text-xs text-text-muted">

@@ -24,6 +24,7 @@ import { getCursorUsage } from "./usage/cursor.js";
 import { resolveQoderCredentials } from "./qoderModels.js";
 import { getGlmUsage } from "./usage/glm.js";
 import { getCommandCodeUsage } from "./usage/commandcode.js";
+import { getOtterlyUsage } from "./usage/otterly.js";
 import {
   getIflowUsage,
   getOllamaUsage,
@@ -69,6 +70,8 @@ const USAGE_HANDLERS = {
   "xiaomi-mimo": (c) => getXiaomiMimoUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   commandcode: (c) => getCommandCodeUsage(c.apiKey, c.proxyOptions),
   cursor: (c) => getCursorUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
+  // Self-hosted Otterly server: quota from <connection baseUrl root>/api/quota
+  otterly: (c) => getOtterlyUsage(c.apiKey, c.providerSpecificData, c.proxyOptions, { force: c.force }),
 };
 
 // Qoder intl/CN share one usage path: PATs must be exchanged to a job token

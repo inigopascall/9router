@@ -9,6 +9,8 @@ import Badge from "@/shared/components/Badge";
 import { isOpenAICompatibleProvider, isAnthropicCompatibleProvider, AI_PROVIDERS } from "@/shared/constants/providers";
 import Select from "@/shared/components/Select";
 
+const OTTERLY_DEFAULT_BASE_URL = "http://127.0.0.1:11445/v1";
+
 export default function EditConnectionModal({ isOpen, connection, proxyPools, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: "",
@@ -22,6 +24,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     organization: "",
   });
   const [cloudflareData, setCloudflareData] = useState({ accountId: "" });
+  const [otterlyBaseUrl, setOtterlyBaseUrl] = useState("");
   const [awsData, setAwsData] = useState({ profile: "", region: "", accessKeyId: "", sessionToken: "" });
   const [clearAwsSessionToken, setClearAwsSessionToken] = useState(false);
   const [region, setRegion] = useState("");
@@ -50,6 +53,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       if (connection.provider === "cloudflare-ai" && connection.providerSpecificData) {
         setCloudflareData({ accountId: connection.providerSpecificData.accountId || "" });
       }
+      if (connection.provider === "otterly") {
+        setOtterlyBaseUrl(connection.providerSpecificData?.baseUrl || OTTERLY_DEFAULT_BASE_URL);
+      }
       if (AI_PROVIDERS?.[connection.provider]?.credentialForm === "aws") {
         const psd = connection.providerSpecificData || {};
         setAwsData({
@@ -74,6 +80,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
   const isOAuth = connection?.authType === "oauth";
   const isAzure = connection?.provider === "azure";
   const isCloudflareAi = connection?.provider === "cloudflare-ai";
+  const isOtterly = connection?.provider === "otterly";
   const usesAwsCredentialForm = AI_PROVIDERS?.[connection?.provider]?.credentialForm === "aws";
   const isCompatible = connection
     ? (isOpenAICompatibleProvider(connection.provider) || isAnthropicCompatibleProvider(connection.provider))
@@ -94,6 +101,8 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
     accessKeyId: awsData.accessKeyId.trim(),
     sessionToken: clearAwsSessionToken ? null : awsData.sessionToken.trim(),
   });
+
+  const buildOtterlySpecificData = () => ({ baseUrl: otterlyBaseUrl.trim() || OTTERLY_DEFAULT_BASE_URL });
 
   const handleTest = async () => {
     if (!connection?.provider) return;
@@ -123,6 +132,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
           apiKey: formData.apiKey,
           ...(isAzure ? { providerSpecificData: azureData } : {}),
           ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+          ...(isOtterly ? { providerSpecificData: buildOtterlySpecificData() } : {}),
           ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
           ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
         }),
@@ -159,6 +169,7 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
                 apiKey: formData.apiKey,
                 ...(isAzure ? { providerSpecificData: azureData } : {}),
                 ...(isCloudflareAi ? { providerSpecificData: cloudflareData } : {}),
+                ...(isOtterly ? { providerSpecificData: buildOtterlySpecificData() } : {}),
                 ...(usesAwsCredentialForm ? { providerSpecificData: buildAwsSpecificData() } : {}),
                 ...(providerRegions ? { providerSpecificData: buildRegionSpecificData() } : {}),
               }),
@@ -190,6 +201,9 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
       }
       if (isCloudflareAi) {
         updates.providerSpecificData = { accountId: cloudflareData.accountId };
+      }
+      if (isOtterly) {
+        updates.providerSpecificData = buildOtterlySpecificData();
       }
       if (usesAwsCredentialForm) {
         updates.providerSpecificData = buildAwsSpecificData();
@@ -253,6 +267,16 @@ export default function EditConnectionModal({ isOpen, connection, proxyPools, on
               </Badge>
             )}
           </>
+        )}
+
+        {isOtterly && (
+          <Input
+            label="Base URL"
+            value={otterlyBaseUrl}
+            onChange={(e) => setOtterlyBaseUrl(e.target.value)}
+            placeholder={OTTERLY_DEFAULT_BASE_URL}
+            hint="The Otterly server's OpenAI-compatible base URL, ending in /v1."
+          />
         )}
 
         {isAzure && (

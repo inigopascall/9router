@@ -154,6 +154,12 @@ export class DefaultExecutor extends BaseExecutor {
       const normalized = baseUrl.replace(/\/$/, "");
       return `${normalized}/messages`;
     }
+    // Per-connection server (registry transport.connectionBaseUrl): the connection's
+    // providerSpecificData.baseUrl (.../v1) wins; without one the registry baseUrl is used.
+    const connectionBaseUrl = this.config.connectionBaseUrl ? credentials?.providerSpecificData?.baseUrl : null;
+    if (typeof connectionBaseUrl === "string" && connectionBaseUrl.trim()) {
+      return `${connectionBaseUrl.trim().replace(/\/$/, "")}/chat/completions`;
+    }
     // gemini-format: build :streamGenerateContent / :generateContent path
     if (this.config.format === "gemini") {
       return `${this.config.baseUrl}/${model}:${stream ? "streamGenerateContent?alt=sse" : "generateContent"}`;
