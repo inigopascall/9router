@@ -8,6 +8,7 @@ import { probeBedrockCredentials } from "open-sse/executors/bedrock.js";
 import { resolveOllamaLocalHost, PROVIDERS } from "open-sse/config/providers.js";
 import { proxyAwareFetch } from "open-sse/utils/proxyFetch.js";
 import { buildKiroIdentityHeaders } from "open-sse/shared/kiroIdentity.js";
+import { resolveOtterlyBaseUrl } from "open-sse/services/usage/otterly.js";
 import { CODEX_CLI_VERSION } from "open-sse/config/appConstants.js";
 import { GROK_CLI_PAGER_USER_AGENT, GROK_CLI_VERSION } from "open-sse/config/grokCli.js";
 import {
@@ -953,6 +954,12 @@ case "llm7": {
             ? "Invalid API key"
             : `SenseNova API error (${res.status})`,
         };
+      }
+      case "otterly": {
+        const res = await fetchWithConnectionProxy(`${resolveOtterlyBaseUrl(connection)}/models`, {
+          headers: { Authorization: `Bearer ${connection.apiKey}` },
+        }, effectiveProxy);
+        return { valid: res.ok, error: res.ok ? null : "Invalid API key or base URL" };
       }
       case "kimchi": {
         // Dual-auth: same validation endpoint as the OAuth flow — the token (API key

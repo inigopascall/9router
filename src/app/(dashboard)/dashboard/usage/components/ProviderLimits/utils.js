@@ -650,6 +650,7 @@ export function parseQuotaData(provider, data) {
         break;
 
       case "claude":
+      case "otterly":
         if (data.message) {
           // Handle error message case
           normalizedQuotas.push({
@@ -907,7 +908,7 @@ export function parseQuotaData(provider, data) {
     return [];
   }
 
-  if (provider?.toLowerCase() === "claude") {
+  if (provider?.toLowerCase() === "claude" || provider?.toLowerCase() === "otterly") {
     const CLAUDE_QUOTA_ORDER = {
       "session (5h)": 0,
       "weekly (7d)": 1,

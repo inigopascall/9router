@@ -28,6 +28,7 @@ import { getCommandCodeUsage } from "./usage/commandcode.js";
 import { getSyntheticUsage } from "./usage/synthetic.js";
 import { getDeepRelayUsage } from "./usage/deeprelay.js";
 import { getOpenDesignUsage } from "./usage/opendesign.js";
+import { getOtterlyUsage } from "./usage/otterly.js";
 import {
   getIflowUsage,
   getOllamaUsage,
@@ -80,6 +81,8 @@ const USAGE_HANDLERS = {
   cursor: (c) => getCursorUsage(c.accessToken, c.providerSpecificData, c.proxyOptions),
   // OAuth WorkOS JWT (workos: prefix) or plain ClinePass API key — same usage-limits URL.
   clinepass: (c) => getClinepassUsage(c.accessToken, c.apiKey, c.proxyOptions),
+  // Self-hosted Otterly server: quota from <connection baseUrl root>/api/quota
+  otterly: (c) => getOtterlyUsage(c.apiKey, c.providerSpecificData, c.proxyOptions, { force: c.force }),
 };
 
 // Qoder intl/CN share one usage path: PATs must be exchanged to a job token
