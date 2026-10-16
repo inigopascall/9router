@@ -1,0 +1,20 @@
+[Unit]
+Description=9router fork with the otterly provider, staging instance (port 20129)
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=%h/.local/share/9router-fork/app
+Environment=NODE_ENV=production
+Environment=HOSTNAME=127.0.0.1
+Environment=PORT=20129
+Environment=DATA_DIR=%h/.local/share/9router-staging
+Environment=HOME=%h/.local/share/9router-staging/home
+Environment=NEXT_TELEMETRY_DISABLED=1
+EnvironmentFile=%h/.config/9router-staging/env
+ExecStart=/usr/bin/node --dns-result-order=ipv4first %h/.local/share/9router-fork/app/custom-server.js
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
