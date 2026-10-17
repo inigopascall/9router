@@ -6,9 +6,9 @@
 #   UNIT=nine-router.service   DATA=/home/inigo/.9router   PORT=20128
 #   FORK_APP=/home/inigo/.local/share/9router-fork/app
 #   OVERRIDE_ENV=/home/inigo/.config/9router-fork/override.env   HEALTH_TIMEOUT=90
-#   SKIP_OTTERLY_CHECK=1   skip the check that otterly@acct1 and otterly@acct2 are up and logged in
+#   SKIP_OTTERLY_CHECK=1   skip the check that otterly@airship and otterly@iwd are up and logged in
 #   SKIP_CONFIGURE=1       do not run configure.sh after the cutover
-#   ACCT1_URL, ACCT2_URL, ALIASES, DASHBOARD_PASSWORD_FILE   passed on to configure.sh; see there
+#   AIRSHIP_URL, IWD_URL, ALIASES, DASHBOARD_PASSWORD_FILE   passed on to configure.sh; see there
 # Exit status: 0 done; 1 the cutover failed (and was rolled back) or the backup failed; 2 preflight
 # failed, nothing was changed; 3 the fork is running, but configure.sh failed.
 set -euo pipefail
@@ -33,7 +33,7 @@ grep -qx "HOSTNAME=127.0.0.1" "$OVERRIDE_ENV" || preflight_fail "$OVERRIDE_ENV d
 if [ "$SKIP_OTTERLY_CHECK" = 1 ]; then
   log "preflight: Otterly check skipped (SKIP_OTTERLY_CHECK=1)"
 else
-  for acct in acct1 acct2; do
+  for acct in airship iwd; do
     systemctl --user is-active --quiet "otterly@$acct.service" || preflight_fail "otterly@$acct.service is not active"
     envf="$HOME/.config/otterly/$acct.env"
     [ -f "$envf" ] || preflight_fail "missing $envf"
@@ -98,8 +98,8 @@ fi
 
 # 8. For the live unit: the Otterly units start at boot, and the staging instance is stopped.
 if [ "$UNIT" = nine-router.service ]; then
-  systemctl --user enable otterly@acct1.service otterly@acct2.service
-  log "enabled otterly@acct1.service and otterly@acct2.service"
+  systemctl --user enable otterly@airship.service otterly@iwd.service
+  log "enabled otterly@airship.service and otterly@iwd.service"
   if systemctl --user cat nine-router-staging.service >/dev/null 2>&1; then
     systemctl --user stop nine-router-staging.service
     systemctl --user disable nine-router-staging.service
