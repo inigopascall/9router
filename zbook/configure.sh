@@ -5,8 +5,8 @@
 #
 # Settings, from the environment (the defaults, in common.sh, are the live targets):
 #   PORT=20128                                  the 9router at http://127.0.0.1:$PORT
-#   ACCT1_URL=http://127.0.0.1:11445/v1         Otterly for Claude account 1, priority 1
-#   ACCT2_URL=http://127.0.0.1:11446/v1         Otterly for Claude account 2, priority 2
+#   AIRSHIP_URL=http://127.0.0.1:11445/v1       Otterly for the Claude account Airship, priority 1
+#   IWD_URL=http://127.0.0.1:11446/v1           Otterly for the Claude account IWD, priority 2
 #   ALIASES="claude-opus-5-5 claude-fable-5-1"  each id gets the alias <id> -> otterly/<id>
 #   DASHBOARD_PASSWORD_FILE                     read the dashboard password from this file instead
 #                                               of asking for it on the terminal (rehearsals)
@@ -91,10 +91,12 @@ if [ "$code" != 200 ]; then
 else
   cp "$TMP/body" "$TMP/providers.json"
   created=0 present=0 prio=0
-  for url in "$ACCT1_URL" "$ACCT2_URL"; do
+  for spec in "Airship|$AIRSHIP_URL" "IWD|$IWD_URL"; do
     prio=$((prio + 1))
+    title=${spec%%|*}
+    url=${spec#*|}
     url=${url%/}
-    name="Claude account $prio (Otterly :$(url_port "$url"))"
+    name="Claude $title (Otterly :$(url_port "$url"))"
     id=$(jq -r --arg u "$url" 'first(.connections[]? | select(.provider == "otterly" and (((.providerSpecificData.baseUrl // "") | tostring | sub("/+$"; "")) == $u)) | .id) // empty' "$TMP/providers.json")
     if [ -n "$id" ]; then
       log "connection already there, left as it is: an otterly connection for $url (id $id)"
