@@ -1241,6 +1241,13 @@
   "otterly": {
     "baseUrl": "http://127.0.0.1:11445/v1/chat/completions",
     "connectionBaseUrl": true,
+    "passUpstreamDrop": true,
+    "timeoutMs": 300000,
+    "retry": {
+      "502": 0,
+      "503": 0,
+      "504": 0
+    },
     "format": "openai"
   }
 }
