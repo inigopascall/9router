@@ -7,12 +7,14 @@
 #   FORK_APP=/home/inigo/.local/share/9router-fork/app
 #   OVERRIDE_ENV=/home/inigo/.config/9router-fork/override.env   HEALTH_TIMEOUT=90
 #   SKIP_OTTERLY_CHECK=1   skip the check that otterly@acct1 and otterly@acct2 are up and logged in
-#   ALIASES="claude-opus-5-5 claude-fable-5-1"   the model ids in the printed alias commands
+#   SKIP_CONFIGURE=1       do not run configure.sh after the cutover
+#   ACCT1_URL, ACCT2_URL, ALIASES, DASHBOARD_PASSWORD_FILE   passed on to configure.sh; see there
+# Exit status: 0 done; 1 the cutover failed (and was rolled back) or the backup failed; 2 preflight
+# failed, nothing was changed; 3 the fork is running, but configure.sh failed.
 set -euo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 SKIP_OTTERLY_CHECK=${SKIP_OTTERLY_CHECK:-0}
-ALIASES=${ALIASES:-claude-opus-5-5 claude-fable-5-1}
-JAR="$XDG_RUNTIME_DIR/9router-session.jar"
+SKIP_CONFIGURE=${SKIP_CONFIGURE:-0}
 
 preflight_fail() { log "PREFLIGHT FAILED: $*"; log "nothing was changed"; exit 2; }
 
@@ -76,9 +78,25 @@ if ! wait_healthy fork; then
   "$ZBOOK_DIR/rollback.sh" --restore "$BACKUP" || log "ROLLBACK FAILED as well: see above"
   exit 1
 fi
-
-# 7. Success.
 log "cutover succeeded"
+
+# 7. Configure the otterly connections and the model aliases. If that fails, the fork keeps running.
+CONFIGURE_RC=0
+if [ "$SKIP_CONFIGURE" = 1 ]; then
+  CONFIGURE_OUTCOME="skipped (SKIP_CONFIGURE=1). To run it: $(configure_cmd)"
+  log "configure.sh skipped (SKIP_CONFIGURE=1)"
+else
+  log "running configure.sh"
+  if "$ZBOOK_DIR/configure.sh"; then
+    CONFIGURE_OUTCOME="succeeded"
+  else
+    CONFIGURE_RC=$?
+    CONFIGURE_OUTCOME="FAILED (exit $CONFIGURE_RC). The fork is running; nothing was rolled back. To run it again: $(configure_cmd)"
+    log "configure.sh failed (exit $CONFIGURE_RC); the fork stays running"
+  fi
+fi
+
+# 8. For the live unit: the Otterly units start at boot, and the staging instance is stopped.
 if [ "$UNIT" = nine-router.service ]; then
   systemctl --user enable otterly@acct1.service otterly@acct2.service
   log "enabled otterly@acct1.service and otterly@acct2.service"
@@ -90,29 +108,12 @@ if [ "$UNIT" = nine-router.service ]; then
 fi
 trap - ERR
 
-cat <<EOF
-
-Backup of the data directory: $BACKUP
-
-Next, in the 9router dashboard (http://127.0.0.1:$PORT/dashboard): Providers, "Otterly (Claude)",
-add two connections:
-  1. name "Claude account 1 (Otterly :11445)", base URL http://127.0.0.1:11445/v1, priority 1
-  2. name "Claude account 2 (Otterly :11446)", base URL http://127.0.0.1:11446/v1, priority 2
-  The API key field must be filled in but is not used: enter anything, e.g. unused.
-
-So that clients can go on sending bare model ids, give each id an alias that points at otterly/<id>.
-The alias API needs a dashboard session. Log in with the dashboard password:
-  read -rsp 'dashboard password: ' PW; echo
-  printf '%s' "\$PW" | jq -Rs '{password: .}' | curl -s -c $JAR -X POST http://127.0.0.1:$PORT/api/auth/login -H 'Content-Type: application/json' -d @-; unset PW
-then set the aliases:
-EOF
-for id in $ALIASES; do
-  echo "  curl -s -b $JAR -X PUT http://127.0.0.1:$PORT/api/models/alias -H 'Content-Type: application/json' -d '{\"model\":\"otterly/$id\",\"alias\":\"$id\"}'"
-done
-cat <<EOF
-and remove the session: rm $JAR
-
-Undo: stops $UNIT, removes the drop-in, puts this backup back and starts the original ExecStart.
-Changes made since the cutover are lost; leave out --restore to keep the data as it is now.
-  $UNDO
-EOF
+# 9. The summary.
+echo
+echo "Backup of the data directory: $BACKUP"
+echo "configure.sh: $CONFIGURE_OUTCOME"
+if [ "$UNIT" = nine-router.service ]; then
+  echo "In AiderDesk, edit the provider otterly-claude: set its base URL to http://127.0.0.1:20128/v1 and its API key to the 9router API key your 9router provider uses. To go back, set the base URL to http://localhost:11435/v1."
+fi
+echo "Undo: $UNDO"
+[ "$CONFIGURE_RC" = 0 ] || exit 3
