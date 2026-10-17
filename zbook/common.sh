@@ -1,4 +1,4 @@
-# Settings and the health check shared by cutover.sh and rollback.sh. Sourced, not run.
+# Settings and the health check shared by cutover.sh, rollback.sh and configure.sh. Sourced, not run.
 # Every setting can be overridden from the environment; the defaults are the live targets.
 UNIT=${UNIT:-nine-router.service}
 DATA=${DATA:-/home/inigo/.9router}
@@ -8,7 +8,11 @@ FORK_APP=${FORK_APP:-/home/inigo/.local/share/9router-fork/app}
 FORK_APP=${FORK_APP%/}
 OVERRIDE_ENV=${OVERRIDE_ENV:-/home/inigo/.config/9router-fork/override.env}
 HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-90}
-export UNIT DATA PORT FORK_APP OVERRIDE_ENV HEALTH_TIMEOUT
+# configure.sh: the two Otterly servers (priority 1 and 2) and the model ids that get an alias.
+ACCT1_URL=${ACCT1_URL:-http://127.0.0.1:11445/v1}
+ACCT2_URL=${ACCT2_URL:-http://127.0.0.1:11446/v1}
+ALIASES=${ALIASES:-claude-opus-5-5 claude-fable-5-1}
+export UNIT DATA PORT FORK_APP OVERRIDE_ENV HEALTH_TIMEOUT ACCT1_URL ACCT2_URL ALIASES
 export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 
 ZBOOK_DIR=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
@@ -17,6 +21,13 @@ DROPIN_DIR="$HOME/.config/systemd/user/$UNIT.d"
 DROPIN="$DROPIN_DIR/otterly-fork.conf"
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
+
+# The command line that runs configure.sh again with this run's settings.
+configure_cmd() {
+  printf '%sPORT=%s ACCT1_URL=%s ACCT2_URL=%s ALIASES='\''%s'\'' %s/configure.sh\n' \
+    "${DASHBOARD_PASSWORD_FILE:+DASHBOARD_PASSWORD_FILE=$DASHBOARD_PASSWORD_FILE }" \
+    "$PORT" "$ACCT1_URL" "$ACCT2_URL" "$ALIASES" "$ZBOOK_DIR"
+}
 
 # The argv and the pid of the unit's current ExecStart record.
 exec_argv() { systemctl --user show -p ExecStart --value "$UNIT" | sed -n 's/.* argv[[][]]=\(.*\) ; ignore_errors=.*/\1/p' | head -n 1; }
