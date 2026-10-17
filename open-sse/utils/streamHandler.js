@@ -98,8 +98,9 @@ export function createStreamController({ onDisconnect, onError, log, provider, m
  *
  * @param {function} [onAbortTerminal] - Receives a human-readable abort
  * message and returns terminal SSE bytes to emit downstream.
+ * @param {boolean} [passUpstreamDrop] - Error the stream on an upstream drop while connected, instead of ending it.
  */
-export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null) {
+export function createDisconnectAwareStream(transformStream, streamController, onAbortTerminal = null, passUpstreamDrop = false) {
   const reader = transformStream.readable.getReader();
   const writer = transformStream.writable.getWriter();
   let terminalEmitted = false;
@@ -155,6 +156,13 @@ export function createDisconnectAwareStream(transformStream, streamController, o
           code === "EPIPE" ||
           code === "UND_ERR_SOCKET";
 
+        // Providers marked passUpstreamDrop (registry transport) drop a stream on purpose when the
+        // client should retry it, so the client connection is dropped too instead of being ended.
+        if (passUpstreamDrop && wasConnected) {
+          try { controller.error(error); } catch (e) { /* already closed or cancelled */ }
+          return;
+        }
+
         // Graceful close on network/abort, or when a structured terminal is available
         // (Responses passthrough prefers response.failed + [DONE] over a raw transport error)
         try {
@@ -191,8 +199,9 @@ export function createDisconnectAwareStream(transformStream, streamController, o
  * @param {Response} providerResponse - Response from provider
  * @param {TransformStream} transformStream - Transform stream for SSE
  * @param {object} streamController - Stream controller from createStreamController
+ * @param {boolean} [passUpstreamDrop] - Passed on to createDisconnectAwareStream.
  */
-export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS) {
+export function pipeWithDisconnect(providerResponse, transformStream, streamController, onAbortTerminal = null, stallTimeoutMs = STREAM_STALL_TIMEOUT_MS, passUpstreamDrop = false) {
   let stallTimer = null;
   let chunkCount = 0;
   let totalBytes = 0;
@@ -254,7 +263,8 @@ export function pipeWithDisconnect(providerResponse, transformStream, streamCont
   return createDisconnectAwareStream(
     { readable: transformedBody, writable: { getWriter: () => ({ abort: () => Promise.resolve() }) } },
     wrappedController,
-    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null
+    onAbortTerminal ? () => onAbortTerminal(abortMessage) : null,
+    passUpstreamDrop
   );
 }
 

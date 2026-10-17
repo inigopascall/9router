@@ -16,6 +16,14 @@ export default {
     // Default server. connectionBaseUrl: a connection's providerSpecificData.baseUrl replaces it.
     baseUrl: "http://127.0.0.1:11445/v1/chat/completions",
     connectionBaseUrl: true,
+    // Otterly drops a streamed reply on purpose when the client should retry it, so the drop is
+    // passed on to the client rather than turned into an end of stream.
+    passUpstreamDrop: true,
+    // A non-streamed reply arrives only when the run ends: wait for headers as long as Node's
+    // fetch does (undici headersTimeout, 300 s) instead of the 60 s default.
+    timeoutMs: 300000,
+    // Each re-send starts another Claude run: no re-send on a network error, timeout, 502, 503 or 504.
+    retry: { 502: 0, 503: 0, 504: 0 },
   },
   // Mirrors Otterly's catalog (otterly/src/server/models.ts)
   models: [

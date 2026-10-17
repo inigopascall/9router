@@ -16,7 +16,8 @@ import {
 } from "../../open-sse/services/usage/otterly.js";
 import { getExecutor } from "../../open-sse/executors/index.js";
 import { parseModel } from "../../open-sse/services/model.js";
-import { PROVIDER_MODELS } from "../../open-sse/providers/index.js";
+import { PROVIDER_MODELS, PROVIDERS } from "../../open-sse/providers/index.js";
+import { pipeWithDisconnect } from "../../open-sse/utils/streamHandler.js";
 import {
   APIKEY_PROVIDERS,
   USAGE_SUPPORTED_PROVIDERS,
@@ -250,3 +251,73 @@ describe("parseQuotaData(otterly)", () => {
     ]);
   });
 });
+
+describe("otterly upstream drop", () => {
+  const encoder = new TextEncoder();
+  const decoder = new TextDecoder();
+  const CHUNK = 'data: {"choices":[{"index":0,"delta":{"content":"partial"}}]}\n\n';
+  const TERMINAL = 'data: {"error":{"message":"upstream connection lost"}}\n\ndata: [DONE]\n\n';
+
+  // A provider response whose body holds one SSE chunk; drop() then errors the body the way
+  // undici does when the upstream socket closes mid-stream.
+  function droppingResponse() {
+    let source;
+    const body = new ReadableStream({
+      start(c) {
+        source = c;
+        c.enqueue(encoder.encode(CHUNK));
+      },
+    });
+    const drop = () => {
+      const error = new TypeError("terminated");
+      error.cause = Object.assign(new Error("other side closed"), { code: "UND_ERR_SOCKET" });
+      source.error(error);
+    };
+    return { response: new Response(body, { headers: { "Content-Type": "text/event-stream" } }), drop };
+  }
+
+  function streamController() {
+    return {
+      signal: new AbortController().signal,
+      startTime: Date.now(),
+      isConnected: () => true,
+      handleError: () => {},
+      handleComplete: () => {},
+      handleDisconnect: () => {},
+      abort: () => {},
+    };
+  }
+
+  function pipe(response, passUpstreamDrop) {
+    const onAbortTerminal = () => encoder.encode(TERMINAL);
+    return pipeWithDisconnect(response, new TransformStream(), streamController(), onAbortTerminal, 60000, passUpstreamDrop).getReader();
+  }
+
+  it("with passUpstreamDrop, yields the chunk sent, then rejects", async () => {
+    const { response, drop } = droppingResponse();
+    const reader = pipe(response, true);
+
+    const first = await reader.read();
+    expect(decoder.decode(first.value)).toBe(CHUNK);
+    drop();
+    await expect(reader.read()).rejects.toThrow("terminated");
+  });
+
+  it("without passUpstreamDrop, yields the chunk sent, then the terminal bytes, then ends", async () => {
+    const { response, drop } = droppingResponse();
+    const reader = pipe(response, false);
+
+    const first = await reader.read();
+    expect(decoder.decode(first.value)).toBe(CHUNK);
+    drop();
+    const second = await reader.read();
+    expect(decoder.decode(second.value)).toBe(TERMINAL);
+    expect(await reader.read()).toEqual({ done: true, value: undefined });
+  });
+
+  it("is set for otterly in the registry, with a 300 s header timeout", () => {
+    expect(PROVIDERS.otterly.passUpstreamDrop).toBe(true);
+    expect(PROVIDERS.otterly.timeoutMs).toBe(300000);
+  });
+});
+
