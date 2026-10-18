@@ -27,8 +27,11 @@ export default {
   },
   // Mirrors Otterly's catalog (otterly/src/server/models.ts)
   models: [
-    { id: "claude-opus-4-8", name: "Claude Opus 4", contextLength: 200000 },
-    { id: "claude-sonnet-4-6", name: "Claude Sonnet 4", contextLength: 200000 },
+    { id: "claude-opus-5-5", name: "Claude Opus 5.5", contextLength: 1000000 },
+    { id: "claude-opus-5", name: "Claude Opus 5", contextLength: 1000000 },
+    { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", contextLength: 1000000 },
+    { id: "claude-sonnet-5", name: "Claude Sonnet 5", contextLength: 1000000 },
+    { id: "claude-haiku-5-5", name: "Claude Haiku 5.5", contextLength: 1000000 },
     { id: "claude-haiku-4-5-20251001", name: "Claude Haiku 4.5", contextLength: 200000 },
   ],
   features: {
