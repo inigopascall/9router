@@ -70,8 +70,11 @@ describe("otterly registry entry", () => {
 
   it("mirrors Otterly's model catalog", () => {
     expect(PROVIDER_MODELS.otterly.map((m) => m.id)).toEqual([
-      "claude-opus-4-8",
-      "claude-sonnet-4-6",
+      "claude-opus-5-5",
+      "claude-opus-5",
+      "claude-sonnet-5-5",
+      "claude-sonnet-5",
+      "claude-haiku-5-5",
       "claude-haiku-4-5-20251001",
     ]);
   });
