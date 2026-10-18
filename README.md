@@ -1,3 +1,25 @@
+# 9router, zbook fork with the Otterly provider
+
+This is a fork of [decolua/9router](https://github.com/decolua/9router), kept on the branch `otterly-provider`: the upstream release tag plus a few commits. Upstream's own README follows below the line.
+
+## What the fork adds
+
+A provider, **Otterly (Claude)**, for [Otterly](https://github.com/inigopascall/otterly). Otterly is a local OpenAI-compatible server that drives the official `claude` CLI, so Claude Pro/Max/Team subscriptions are used only through Anthropic's own client. One Otterly server runs per Claude account; each is one 9router connection.
+
+- **Per-connection base URL.** Each `otterly` connection points at its own Otterly server (`providerSpecificData.baseUrl`, e.g. `http://127.0.0.1:11445/v1`), entered in the dashboard's add/edit connection dialog.
+- **Quota cards.** `/dashboard/quota` shows each account's 5-hour and weekly usage, read from that server's `GET /api/quota`, which Otterly fills from `claude -p /usage`.
+- **Failover.** When an account is at its usage limit, Otterly answers HTTP 429 at once and 9router moves the request to the next connection by priority.
+- **Streams.** Otterly drops a streamed reply on purpose when the client should retry it; for `otterly` only, 9router passes that drop on to the client instead of ending the stream. No re-sends on 5xx or timeouts (each would start another Claude run), and a 300 s wait for response headers.
+- **Updates.** The dashboard's update notice names `zbook/update.sh`, and its update button installs nothing.
+
+Models are addressed as `otterly/<id>`, e.g. `otterly/claude-opus-5-5`.
+
+## Deployment and updating
+
+`zbook/` holds the deployment kit for the machine this runs on: the systemd units, `cutover.sh` / `rollback.sh`, and `update.sh`, which rebases these commits onto the latest upstream release, builds, tests and swaps the build in, putting the previous one back if it fails. See [`zbook/README.md`](zbook/README.md).
+
+---
+
 <div align="center">
   <img src="./images/9router.png?1" alt="9Router Dashboard" width="800"/>
   
