@@ -2,19 +2,27 @@
 # cutover.sh: switch a 9router systemd user unit (by default the live nine-router.service) to the
 # 9router fork with the otterly provider. See README.md.
 #
+# From a shell, the script runs itself in the transient systemd user unit 9router-cutover-<timestamp>
+# and follows its output, so a closed terminal or Ctrl+C cannot cut it short. The output is also
+# appended to /home/inigo/.local/state/9router-fork/<unit>.log. From the moment the unit is stopped
+# until the fork passes its health check, any error, SIGTERM, SIGINT or SIGHUP runs rollback.sh
+# (with --restore once the backup exists) and the script exits 1.
+#
 # Settings, from the environment (the defaults are the live targets):
 #   UNIT=nine-router.service   DATA=/home/inigo/.9router   PORT=20128
 #   FORK_APP=/home/inigo/.local/share/9router-fork/app
-#   OVERRIDE_ENV=/home/inigo/.config/9router-fork/override.env   HEALTH_TIMEOUT=90
+#   OVERRIDE_ENV=/home/inigo/.config/9router-fork/override.env
+#   HEALTH_TIMEOUT=120   PORT_FREE_TIMEOUT=30
 #   SKIP_OTTERLY_CHECK=1   skip the check that otterly@airship and otterly@iwd are up and logged in
-#   SKIP_CONFIGURE=1       do not run configure.sh after the cutover
-#   AIRSHIP_URL, IWD_URL, ALIASES, DASHBOARD_PASSWORD_FILE   passed on to configure.sh; see there
-# Exit status: 0 done; 1 the cutover failed (and was rolled back) or the backup failed; 2 preflight
-# failed, nothing was changed; 3 the fork is running, but configure.sh failed.
-set -euo pipefail
+# Exit status: 0 done; 1 the cutover failed and was rolled back (the output says whether the
+# rollback succeeded); 2 preflight failed, nothing was changed.
+set -Eeuo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 SKIP_OTTERLY_CHECK=${SKIP_OTTERLY_CHECK:-0}
-SKIP_CONFIGURE=${SKIP_CONFIGURE:-0}
+FORWARD_VARS="UNIT DATA PORT FORK_APP OVERRIDE_ENV HEALTH_TIMEOUT PORT_FREE_TIMEOUT SKIP_OTTERLY_CHECK"
+[ $# = 0 ] || { echo "usage: $0" >&2; exit 2; }
+start_in_unit cutover
+unit_io_setup
 
 preflight_fail() { log "PREFLIGHT FAILED: $*"; log "nothing was changed"; exit 2; }
 
@@ -45,20 +53,37 @@ else
 fi
 log "preflight passed"
 
+# From the stop until the health check passes, any error or signal rolls back: with --restore once
+# the backup is complete; before that the data is unchanged, and rollback.sh starts the original on it.
+BACKUP=""
+BACKUP_OK=0
+roll_back() {
+  trap '' INT TERM HUP
+  trap - ERR
+  log "$1: rolling back, so that $UNIT does not stay stopped"
+  if [ "$BACKUP_OK" = 1 ]; then
+    "$ZBOOK_DIR/rollback.sh" --restore "$BACKUP" || log "ROLLBACK FAILED as well: see above"
+  else
+    "$ZBOOK_DIR/rollback.sh" || log "ROLLBACK FAILED as well: see above"
+  fi
+  exit 1
+}
+trap 'roll_back "error at line $LINENO"' ERR
+trap 'roll_back "interrupted by SIGTERM"' TERM
+trap 'roll_back "interrupted by SIGINT"' INT
+trap 'roll_back "interrupted by SIGHUP"' HUP
+
 # 2. Stop the unit.
 log "stopping $UNIT"
 systemctl --user stop "$UNIT"
 
 # 3. Back up the data directory while nothing writes to it.
 BACKUP="$DATA.pre-fork-$(date +%Y%m%d-%H%M%S)"
-if [ -e "$BACKUP" ] || ! cp -a "$DATA" "$BACKUP"; then
-  log "backup to $BACKUP failed; starting $UNIT again unchanged"
-  systemctl --user start "$UNIT"
-  exit 1
-fi
+[ ! -e "$BACKUP" ] || roll_back "the backup directory $BACKUP already exists"
+cp -a "$DATA" "$BACKUP" || roll_back "the backup to $BACKUP failed"
+BACKUP_OK=1
 log "backup: $BACKUP"
 UNDO="UNIT=$UNIT DATA=$DATA PORT=$PORT FORK_APP=$FORK_APP $ZBOOK_DIR/rollback.sh --restore $BACKUP"
-trap 'log "unexpected error at line $LINENO; $UNIT may be stopped. To undo: $UNDO"' ERR
 
 # 4. Install the drop-in, with this run's port, fork directory and override file, and start.
 mkdir -p "$DROPIN_DIR"
@@ -71,49 +96,25 @@ systemctl --user daemon-reload
 log "starting $UNIT on the fork"
 systemctl --user start "$UNIT" || log "start reported an error; the health check decides"
 
-# 5. Health check. 6. If it fails, roll back to the backup and fail.
-if ! wait_healthy fork; then
-  log "health check failed: rolling back"
-  trap - ERR
-  "$ZBOOK_DIR/rollback.sh" --restore "$BACKUP" || log "ROLLBACK FAILED as well: see above"
-  exit 1
-fi
+# 5. Health check. If it fails, roll back to the backup and fail.
+wait_healthy fork || roll_back "health check failed"
+trap - ERR INT TERM HUP
 log "cutover succeeded"
 
-# 7. Configure the otterly connections and the model aliases. If that fails, the fork keeps running.
-CONFIGURE_RC=0
-if [ "$SKIP_CONFIGURE" = 1 ]; then
-  CONFIGURE_OUTCOME="skipped (SKIP_CONFIGURE=1). To run it: $(configure_cmd)"
-  log "configure.sh skipped (SKIP_CONFIGURE=1)"
-else
-  log "running configure.sh"
-  if "$ZBOOK_DIR/configure.sh"; then
-    CONFIGURE_OUTCOME="succeeded"
-  else
-    CONFIGURE_RC=$?
-    CONFIGURE_OUTCOME="FAILED (exit $CONFIGURE_RC). The fork is running; nothing was rolled back. To run it again: $(configure_cmd)"
-    log "configure.sh failed (exit $CONFIGURE_RC); the fork stays running"
-  fi
-fi
-
-# 8. For the live unit: the Otterly units start at boot, and the staging instance is stopped.
+# 6. For the live unit: the Otterly units start at boot, and the staging instance is stopped.
 if [ "$UNIT" = nine-router.service ]; then
-  systemctl --user enable otterly@airship.service otterly@iwd.service
-  log "enabled otterly@airship.service and otterly@iwd.service"
+  systemctl --user enable otterly@airship.service otterly@iwd.service && log "enabled otterly@airship.service and otterly@iwd.service" || log "could not enable otterly@airship.service and otterly@iwd.service"
   if systemctl --user cat nine-router-staging.service >/dev/null 2>&1; then
-    systemctl --user stop nine-router-staging.service
-    systemctl --user disable nine-router-staging.service
-    log "stopped and disabled nine-router-staging.service"
+    systemctl --user stop nine-router-staging.service && systemctl --user disable nine-router-staging.service && log "stopped and disabled nine-router-staging.service" || log "could not stop and disable nine-router-staging.service"
   fi
 fi
-trap - ERR
 
-# 9. The summary.
+# 7. The summary.
 echo
 echo "Backup of the data directory: $BACKUP"
-echo "configure.sh: $CONFIGURE_OUTCOME"
+echo "Next, add the two Otterly connections in the dashboard, http://127.0.0.1:$PORT/dashboard: Providers → \"Otterly (Claude)\" → add a connection with the base URL $AIRSHIP_URL, and another with $IWD_URL. Any text will do as the API key. The priority sets the order: the lowest number is tried first."
+echo "9router knows these models as otterly/<id>, for example otterly/claude-opus-5-5. In AiderDesk, either use those names, or give each id the alias <id> -> otterly/<id>. The dashboard has no page that sets model aliases; configure.sh sets them, and adds either connection if it is missing: $(configure_cmd)"
 if [ "$UNIT" = nine-router.service ]; then
   echo "In AiderDesk, edit the provider otterly-claude: set its base URL to http://127.0.0.1:20128/v1 and its API key to the 9router API key your 9router provider uses. To go back, set the base URL to http://localhost:11435/v1."
 fi
 echo "Undo: $UNDO"
-[ "$CONFIGURE_RC" = 0 ] || exit 3

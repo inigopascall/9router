@@ -1,8 +1,7 @@
 [Unit]
 Description=Otterly: OpenAI-compatible server over the Claude Code CLI (account %i)
 After=network-online.target
-StartLimitIntervalSec=300
-StartLimitBurst=5
+StartLimitIntervalSec=0
 
 [Service]
 Type=simple
@@ -11,7 +10,7 @@ Environment=PATH=%h/.local/share/otterly-zbook/bin:/usr/local/bin:/usr/bin:/bin
 Environment=DISABLE_AUTOUPDATER=1
 ExecStart=/usr/bin/node %h/.local/share/otterly-zbook/app/dist/cli.js serve --host 127.0.0.1 -p ${OTTERLY_PORT}
 Restart=on-failure
-RestartSec=10
+RestartSec=30
 
 [Install]
 WantedBy=default.target
