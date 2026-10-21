@@ -1,6 +1,6 @@
 ---
-verified: 2026-10-18
-verified_by: workdonkey
+verified: 2026-10-21
+verified_by: workhorse
 ---
 
 # zbook: the 9router fork and Otterly as systemd user units
@@ -24,6 +24,7 @@ release. The fork runs from a standalone build at `~/.local/share/9router-fork/a
 | `rollback.sh` | Switches it back | not installed; run from here |
 | `update.sh` | Updates the fork to the latest upstream 9router release | not installed; run from here |
 | `configure.sh` | Optional: gives a running fork its two Otterly connections and the model aliases, and reports on them | not installed; run from here |
+| `native-trial.sh` | Runs `otterly@iwd` on Otterly's native client-tool trial build, or puts it back on the usual build | not installed; run from here |
 | `common.sh` | Settings and helpers shared by the scripts | not installed |
 
 The staging instance keeps its data in `~/.local/share/9router-staging/`, its password in
@@ -188,11 +189,40 @@ Optional and standalone: `cutover.sh` does not run it. It configures the 9router
 
 Exit status: 0 when the connections and the aliases are in place, 1 otherwise.
 
+## native-trial.sh
+
+    ~/code/iwd/9router/zbook/native-trial.sh on|off|status
+
+Switches `otterly@iwd` between the usual Otterly build, `~/.local/share/otterly-zbook/app`, and
+the trial build, `~/.local/share/otterly-zbook/app-native`, run with `OTTERLY_NATIVE_TOOLS=1`
+(native client-tool mode: `@code/otterly/AGENTS.md` §13). `otterly@airship` is not part of the
+trial: `INSTANCE=airship` is refused.
+
+- `on` installs the drop-in `~/.config/systemd/user/otterly@iwd.service.d/native-trial.conf`, which
+  sets `OTTERLY_NATIVE_TOOLS=1` and runs the trial build's `dist/cli.js` in place of the usual
+  one, reloads systemd and restarts the unit. It then waits up to `HEALTH_TIMEOUT` seconds (180 by
+  default) for the unit to be healthy: its main process runs the trial build, `GET /api/status`
+  answers 200, `GET /api/quota` names the account, and the unit's log since the restart shows
+  `Client tools  : native (isolation verified)`, which Otterly prints only when its native startup
+  check passed. If it is not healthy in time, or the script gets SIGINT, SIGTERM or SIGHUP, it
+  removes the drop-in, restarts the unit on the usual build and exits 1.
+- `off` removes the drop-in, reloads systemd, restarts the unit on the usual build and checks it
+  the same way, without the startup-check line, which the usual build does not print.
+- `status` is read-only: the unit's state and PID, which build it runs, whether the drop-in is
+  installed, `GET /api/status`, the unit's `Client tools` startup line, and each build's commit.
+
+`on` and `off` restart `otterly@iwd`, which ends every request running through it at that
+moment. Neither builds nor removes a build: both stay on disk.
+
+Exit status: 0 done; 1 the switch failed (the output says which build runs now); 2 bad arguments
+or a failed preflight: nothing was changed.
+
 ## When an account is at its usage limit
 
 While its Claude account is at its usage limit, Otterly answers every inference request with
-HTTP 429 at once, without starting the Claude CLI (`quota.usageLimit()` in Otterly's
-`server/index.ts`). 9router then sends the same request to the next connection by priority, and
+HTTP 429 without starting a model run (`quota.refreshLimit()` in Otterly's `server/index.ts`).
+At most once a minute it first runs `claude -p /usage`, which calls no model, to see whether the
+limit has lifted. 9router then sends the same request to the next connection by priority, and
 locks the connection that answered 429 for that model only. The lock lasts 2 s after the
 connection's first 429 and doubles with each further 429 from it, whatever the model, up to
 5 minutes (`BACKOFF_CONFIG` and `ERROR_RULES` in `open-sse/config/errorConfig.js`). 9router does
@@ -249,7 +279,7 @@ test -f ~/.config/9router-staging/env && test -f ~/.config/9router-staging/api-k
 grep -cxE 'Environment=(PORT=20128|HOSTNAME=127.0.0.1)|ExecStart=/home/inigo/.local/bin/9router .*' ~/.config/systemd/user/nine-router.service # expect: 3
 # Before the cutover: the pinned CLI knows auth login and auth status; the installed Otterly answers 429 at the usage limit
 grep -a -c -e 'claude auth login' -e 'claude auth status' "$(readlink -f ~/.local/share/otterly-zbook/bin/claude)" # expect: 1 or more
-grep -c 'quota.usageLimit()' ~/.local/share/otterly-zbook/app/dist/server/index.js                 # expect: 1
+grep -cF 'await quota.refreshLimit(ctx.workingDir)' ~/.local/share/otterly-zbook/app/dist/server/index.js # expect: 1
 # cutover.sh: preflight, backup, drop-in, rollback, live-unit steps
 grep -cF -e '.otterly.account.email // empty' -e 'log "nothing was changed"; exit 2' -e 'BACKUP="$DATA.pre-fork-$(date +%Y%m%d-%H%M%S)"' -e '"$DROPIN_SRC" > "$DROPIN"' -e '"$ZBOOK_DIR/rollback.sh" --restore "$BACKUP"' cutover.sh # expect: 5
 grep -cF -e 'Environment=PORT=$PORT|' -e '|$FORK_APP|g' -e '|EnvironmentFile=$OVERRIDE_ENV|' cutover.sh # expect: 3
@@ -308,4 +338,9 @@ grep -cF 'return { status: response.status, message: bodyText || `HTTP ${respons
 grep -c otterly ../open-sse/executors/index.js                                                      # expect: 0
 grep -cF 'const status = HTTP_STATUS.SERVICE_UNAVAILABLE;' ../src/sse/handlers/chat.js              # expect: 1
 grep -cF '"retry-after": String(retryAfterSec)' ../open-sse/utils/error.js                           # expect: 1
+# native-trial.sh: executable; the drop-in, the switch, the trial build it runs, airship refused, the startup-check line, the health limit, the put-back; it builds and removes no build; the trial build prints the Client tools line
+test -x native-trial.sh && echo executable                                                          # expect: executable
+grep -cF -e 'DROPIN="$DROPIN_DIR/native-trial.conf"' -e 'Environment=OTTERLY_NATIVE_TOOLS=1' -e 'TRIAL_APP=${TRIAL_APP:-/home/inigo/.local/share/otterly-zbook/app-native}' -e 'preflight_fail "otterly@airship is not part of the native trial"' -e 'NATIVE_BANNER="native (isolation verified)"' -e 'HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}' -e 'log "the trial build is not healthy: putting the usual build back"' native-trial.sh # expect: 7
+grep -cE 'rm -r|npm' native-trial.sh                                                                # expect: 0
+grep -c 'Client tools  : ' /home/inigo/.local/share/otterly-zbook/app-native/dist/server/index.js  # expect: 1
 ```
