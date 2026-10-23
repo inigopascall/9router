@@ -2,7 +2,8 @@
 # native-trial.sh: run otterly@iwd on Otterly's native client-tool trial build, or put it back on
 # the usual build. See README.md.
 #
-# Usage: native-trial.sh on|off|status
+# Usage: [INSTANCE=iwd|airship] native-trial.sh on|off|status
+#   Each instance is switched on its own; switching one leaves the other as it is.
 #   on      installs the drop-in otterly@iwd.service.d/native-trial.conf, which runs the trial
 #           build in TRIAL_APP with OTTERLY_NATIVE_TOOLS=1, and restarts the unit. If the unit is
 #           not healthy within HEALTH_TIMEOUT seconds, or the script is interrupted, it removes
@@ -14,7 +15,7 @@
 # shows that its native startup check passed ("Client tools  : native (isolation verified)").
 #
 # on and off restart the unit, which ends every request running through it at that moment.
-# Nothing is built or deleted: both builds stay on disk. otterly@airship is not part of the trial.
+# Nothing is built or deleted: both builds stay on disk.
 #
 # Settings, from the environment: INSTANCE=iwd (the unit is otterly@$INSTANCE.service, and its
 # port is OTTERLY_PORT in ~/.config/otterly/$INSTANCE.env), TRIAL_APP, HEALTH_TIMEOUT=180.
@@ -36,12 +37,12 @@ export XDG_RUNTIME_DIR=${XDG_RUNTIME_DIR:-/run/user/$(id -u)}
 export DBUS_SESSION_BUS_ADDRESS=${DBUS_SESSION_BUS_ADDRESS:-unix:path=$XDG_RUNTIME_DIR/bus}
 
 log() { printf '[%s] %s\n' "$(date +%H:%M:%S)" "$*"; }
-usage() { echo "usage: $0 on|off|status" >&2; exit 2; }
+usage() { echo "usage: [INSTANCE=iwd|airship] $0 on|off|status" >&2; exit 2; }
 preflight_fail() { log "PREFLIGHT FAILED: $*"; log "nothing was changed"; exit 2; }
 
 [ $# = 1 ] || usage
 case $1 in on|off|status) ;; *) usage ;; esac
-[ "$INSTANCE" != airship ] || preflight_fail "otterly@airship is not part of the native trial"
+case $INSTANCE in iwd|airship) ;; *) preflight_fail "INSTANCE must be iwd or airship" ;; esac
 [ -f "$ENV_FILE" ] || preflight_fail "missing $ENV_FILE"
 PORT=$(sed -n 's/^OTTERLY_PORT=//p' "$ENV_FILE" | head -n 1)
 [[ $PORT =~ ^[0-9]+$ ]] || preflight_fail "$ENV_FILE sets no numeric OTTERLY_PORT"

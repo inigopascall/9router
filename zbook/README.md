@@ -1,5 +1,5 @@
 ---
-verified: 2026-10-21
+verified: 2026-10-23
 verified_by: workhorse
 ---
 
@@ -24,7 +24,7 @@ release. The fork runs from a standalone build at `~/.local/share/9router-fork/a
 | `rollback.sh` | Switches it back | not installed; run from here |
 | `update.sh` | Updates the fork to the latest upstream 9router release | not installed; run from here |
 | `configure.sh` | Optional: gives a running fork its two Otterly connections and the model aliases, and reports on them | not installed; run from here |
-| `native-trial.sh` | Runs `otterly@iwd` on Otterly's native client-tool trial build, or puts it back on the usual build | not installed; run from here |
+| `native-trial.sh` | Runs `otterly@iwd` or `otterly@airship` on Otterly's native client-tool trial build, or puts it back on the usual build | not installed; run from here |
 | `common.sh` | Settings and helpers shared by the scripts | not installed |
 
 The staging instance keeps its data in `~/.local/share/9router-staging/`, its password in
@@ -191,14 +191,15 @@ Exit status: 0 when the connections and the aliases are in place, 1 otherwise.
 
 ## native-trial.sh
 
-    ~/code/iwd/9router/zbook/native-trial.sh on|off|status
+    [INSTANCE=iwd|airship] ~/code/iwd/9router/zbook/native-trial.sh on|off|status
 
-Switches `otterly@iwd` between the usual Otterly build, `~/.local/share/otterly-zbook/app`, and
+Switches one Otterly instance, `otterly@iwd` by default or `otterly@airship` with `INSTANCE=airship`,
+ between the usual Otterly build, `~/.local/share/otterly-zbook/app`, and
 the trial build, `~/.local/share/otterly-zbook/app-native`, run with `OTTERLY_NATIVE_TOOLS=1`
-(native client-tool mode: `@code/otterly/AGENTS.md` §13). `otterly@airship` is not part of the
-trial: `INSTANCE=airship` is refused.
+(native client-tool mode: `@code/otterly/AGENTS.md` §13). Each instance is switched on its own;
+switching one leaves the other as it is. Any other `INSTANCE` is refused.
 
-- `on` installs the drop-in `~/.config/systemd/user/otterly@iwd.service.d/native-trial.conf`, which
+- `on` installs the drop-in `~/.config/systemd/user/otterly@<instance>.service.d/native-trial.conf`, which
   sets `OTTERLY_NATIVE_TOOLS=1` and runs the trial build's `dist/cli.js` in place of the usual
   one, reloads systemd and restarts the unit. It then waits up to `HEALTH_TIMEOUT` seconds (180 by
   default) for the unit to be healthy: its main process runs the trial build, `GET /api/status`
@@ -211,7 +212,7 @@ trial: `INSTANCE=airship` is refused.
 - `status` is read-only: the unit's state and PID, which build it runs, whether the drop-in is
   installed, `GET /api/status`, the unit's `Client tools` startup line, and each build's commit.
 
-`on` and `off` restart `otterly@iwd`, which ends every request running through it at that
+`on` and `off` restart that instance, which ends every request running through it at that
 moment. Neither builds nor removes a build: both stay on disk.
 
 Exit status: 0 done; 1 the switch failed (the output says which build runs now); 2 bad arguments
@@ -338,9 +339,9 @@ grep -cF 'return { status: response.status, message: bodyText || `HTTP ${respons
 grep -c otterly ../open-sse/executors/index.js                                                      # expect: 0
 grep -cF 'const status = HTTP_STATUS.SERVICE_UNAVAILABLE;' ../src/sse/handlers/chat.js              # expect: 1
 grep -cF '"retry-after": String(retryAfterSec)' ../open-sse/utils/error.js                           # expect: 1
-# native-trial.sh: executable; the drop-in, the switch, the trial build it runs, airship refused, the startup-check line, the health limit, the put-back; it builds and removes no build; the trial build prints the Client tools line
+# native-trial.sh: executable; the drop-in, the switch, the trial build it runs, only iwd or airship, the startup-check line, the health limit, the put-back; it builds and removes no build; the trial build prints the Client tools line
 test -x native-trial.sh && echo executable                                                          # expect: executable
-grep -cF -e 'DROPIN="$DROPIN_DIR/native-trial.conf"' -e 'Environment=OTTERLY_NATIVE_TOOLS=1' -e 'TRIAL_APP=${TRIAL_APP:-/home/inigo/.local/share/otterly-zbook/app-native}' -e 'preflight_fail "otterly@airship is not part of the native trial"' -e 'NATIVE_BANNER="native (isolation verified)"' -e 'HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}' -e 'log "the trial build is not healthy: putting the usual build back"' native-trial.sh # expect: 7
+grep -cF -e 'DROPIN="$DROPIN_DIR/native-trial.conf"' -e 'Environment=OTTERLY_NATIVE_TOOLS=1' -e 'TRIAL_APP=${TRIAL_APP:-/home/inigo/.local/share/otterly-zbook/app-native}' -e 'preflight_fail "INSTANCE must be iwd or airship"' -e 'NATIVE_BANNER="native (isolation verified)"' -e 'HEALTH_TIMEOUT=${HEALTH_TIMEOUT:-180}' -e 'log "the trial build is not healthy: putting the usual build back"' native-trial.sh # expect: 7
 grep -cE 'rm -r|npm' native-trial.sh                                                                # expect: 0
 grep -c 'Client tools  : ' /home/inigo/.local/share/otterly-zbook/app-native/dist/server/index.js  # expect: 1
 ```
