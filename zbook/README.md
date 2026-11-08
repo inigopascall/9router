@@ -114,6 +114,7 @@ includes the staging instance if it is running.
 ## update.sh
 
     ~/code/iwd/9router/zbook/update.sh --check
+    ~/code/iwd/9router/zbook/update.sh --resolve
     ~/code/iwd/9router/zbook/update.sh
 
 `--check` is read-only. It fetches the release tags from `upstream`, prints the release the branch
@@ -146,6 +147,15 @@ runs the fork. Then, in a transient unit `9router-update-<timestamp>`, run and f
    `pre-update-<timestamp>`, and exits 1.
 7. On success it prints the versions before and after, the backup path, the previous build and the
    undo command.
+
+`--resolve` is the way through a rebase that conflicts. It refuses (exit 2, nothing changed)
+unless the repository is clean and on `otterly-provider`, and does nothing when the branch is
+already on the latest release. Otherwise it tags the branch tip `pre-update-<timestamp>` and starts
+the rebase in the checkout itself, not in a transient unit. A clean rebase exits 0. On a conflict
+it leaves the rebase in progress, names the conflicting files and exits 1: resolve them, `git add`
+them and `git rebase --continue` until the rebase finishes, then run `FORCE=1 update.sh` to build,
+test and deploy; `git rebase --abort` gives up instead. `--resolve` itself builds and deploys
+nothing.
 
 On 2026-10-18 `FORCE=1 update.sh` was rehearsed against the scratch copy of the unit.
 

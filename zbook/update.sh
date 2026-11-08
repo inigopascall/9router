@@ -1,14 +1,18 @@
 #!/usr/bin/env bash
 # update.sh: update the 9router fork to the latest upstream 9router release. See README.md.
 #
-# Usage: update.sh [--check]
-#   --check  read-only: fetch the release tags from upstream, and print the release the fork is
-#            based on, the latest upstream release, and whether the fork's commits rebase cleanly
-#            onto it (tried in a temporary git worktree, removed afterwards).
-#   (none)   rebase the fork's commits onto the latest release, build and test it, and swap the new
-#            build in for FORK_APP; if it is not healthy, put the previous build and the data back.
-#            From a shell it runs itself in the transient systemd user unit
-#            9router-update-<timestamp> and follows it, as cutover.sh does.
+# Usage: update.sh [--check | --resolve]
+#   --check    read-only: fetch the release tags from upstream, and print the release the fork is
+#              based on, the latest upstream release, and whether the fork's commits rebase cleanly
+#              onto it (tried in a temporary git worktree, removed afterwards).
+#   --resolve  for when the rebase conflicts: tag the branch tip pre-update-<timestamp> and start
+#              the rebase onto the latest release in this checkout, leaving any conflict in place to
+#              be resolved by hand. Builds and deploys nothing. Then: resolve, git rebase --continue,
+#              and FORCE=1 update.sh to build, test and deploy.
+#   (none)     rebase the fork's commits onto the latest release, build and test it, and swap the new
+#              build in for FORK_APP; if it is not healthy, put the previous build and the data back.
+#              From a shell it runs itself in the transient systemd user unit
+#              9router-update-<timestamp> and follows it, as cutover.sh does.
 # Settings, from the environment, as for cutover.sh: UNIT, DATA, PORT, FORK_APP, HEALTH_TIMEOUT,
 # PORT_FREE_TIMEOUT. Also:
 #   FORCE=1       rebuild and swap even when the fork is already on the latest release
@@ -17,6 +21,8 @@
 # Exit status: 0 done, or already up to date; 1 the build or the tests failed and nothing was
 # swapped, or the new build was not healthy and the previous one was put back; 2 refused, or the
 # rebase conflicts: nothing was changed. With --check: 0 up to date or rebases cleanly, 1 conflicts.
+# With --resolve: 0 rebased cleanly or already up to date, 1 the rebase stopped on conflicts and is
+# left in progress, 2 refused.
 set -Eeuo pipefail
 . "$(dirname "${BASH_SOURCE[0]}")/common.sh"
 FORCE=${FORCE:-0}
@@ -26,7 +32,7 @@ REPO=$(cd "$ZBOOK_DIR/.." && pwd)
 BRANCH=otterly-provider
 FORWARD_VARS="UNIT DATA PORT FORK_APP OVERRIDE_ENV HEALTH_TIMEOUT PORT_FREE_TIMEOUT FORCE UPDATE_WORK"
 
-usage() { echo "usage: $0 [--check]" >&2; exit 2; }
+usage() { echo "usage: $0 [--check | --resolve]" >&2; exit 2; }
 g() { git -C "$REPO" "$@"; }
 app_version() { jq -r '.version // "unknown"' "$1/package.json" 2>/dev/null || echo unknown; }
 fetch_tags() { log "fetching the release tags from upstream"; g fetch -q upstream 'refs/tags/v*:refs/tags/v*'; }
@@ -63,9 +69,41 @@ check() {
   return $rc
 }
 
+# --resolve: start the rebase onto the latest release in the checkout itself and leave any conflict
+# in place; deploying is left to FORCE=1 update.sh once the rebase is finished.
+resolve() {
+  local base latest tag
+  [ "$(g rev-parse --abbrev-ref HEAD)" = "$BRANCH" ] || { echo "refused: $REPO is not on the branch $BRANCH" >&2; exit 2; }
+  [ -z "$(g status --porcelain)" ] || { echo "refused: $REPO has uncommitted changes" >&2; exit 2; }
+  fetch_tags
+  base=$(base_tag)
+  latest=$(latest_tag)
+  if [ "$base" = "$latest" ]; then
+    echo "already on the latest release $latest; nothing to rebase"
+    return 0
+  fi
+  tag="pre-update-$(date +%Y%m%d-%H%M%S)"
+  g tag "$tag" HEAD
+  echo "tagged the branch tip $(g rev-parse --short HEAD) as $tag"
+  if g rebase -q --onto "$latest" "$base" "$BRANCH"; then
+    echo "rebased onto $latest cleanly. Next, to build, test and deploy: FORCE=1 $0"
+    return 0
+  fi
+  echo
+  echo "the rebase onto $latest stopped on conflicts in: $(g diff --name-only --diff-filter=U | tr '\n' ' ')"
+  echo "Resolve them in $REPO, git add the files, then: git -C $REPO rebase --continue (repeat until it finishes)."
+  echo "Then, to build, test and deploy: FORCE=1 $0"
+  echo "To give up instead: git -C $REPO rebase --abort"
+  exit 1
+}
+
 case $# in
   0) ;;
-  1) [ "$1" = --check ] || usage; check; exit 0 ;;
+  1) case $1 in
+       --check) check; exit 0 ;;
+       --resolve) resolve; exit 0 ;;
+       *) usage ;;
+     esac ;;
   *) usage ;;
 esac
 
