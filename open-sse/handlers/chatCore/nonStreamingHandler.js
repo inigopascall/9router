@@ -92,6 +92,18 @@ function openAICompletionToResponses(responseBody, customToolNames = null) {
 }
 
 /**
+ * A client that did not ask for a stream, answered by the upstream with one JSON body.
+ * chatCore treats a request without `stream` as streaming but forwards it to a same-format
+ * upstream unchanged, and an OpenAI-compatible upstream answers such a request with JSON.
+ * That body must go back as JSON: the streaming path would forward it and append `data: [DONE]`.
+ */
+export function isJsonReplyToUnrequestedStream({ stream, clientRequestedStreaming, providerResponse }) {
+  if (!stream || clientRequestedStreaming) return false;
+  const contentType = (providerResponse?.headers?.get?.("content-type") || "").toLowerCase();
+  return contentType.includes("application/json");
+}
+
+/**
  * Translate non-streaming response body from provider format → OpenAI format.
  */
 export function translateNonStreamingResponse(responseBody, targetFormat, sourceFormat, customToolNames = null) {

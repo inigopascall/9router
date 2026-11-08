@@ -179,8 +179,11 @@ export function createSSEStream(options = {}) {
           let injectedUsage = false;
           let responsesTerminal = false;
 
-          // Upstream already sent the sentinel; flush() must not append a second one.
-          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") streamDoneSent = true;
+          // The upstream's own sentinel ends the stream: forward it once, and flush() adds none
+          if (trimmed.startsWith("data:") && trimmed.slice(5).trim() === "[DONE]") {
+            if (streamDoneSent) continue;
+            streamDoneSent = true;
+          }
 
           if (trimmed.startsWith("data:") && trimmed.slice(5).trim() !== "[DONE]") {
             try {
