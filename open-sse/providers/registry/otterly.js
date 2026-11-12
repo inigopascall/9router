@@ -27,6 +27,8 @@ export default {
   },
   // Mirrors Otterly's catalog (otterly/src/server/models.ts)
   models: [
+    { id: "claude-fable-5-2", name: "Claude Fable 5.2", contextLength: 1000000 },
+    { id: "claude-fable-5-1", name: "Claude Fable 5.1", contextLength: 1000000 },
     { id: "claude-opus-5-5", name: "Claude Opus 5.5", contextLength: 1000000 },
     { id: "claude-opus-5", name: "Claude Opus 5", contextLength: 1000000 },
     { id: "claude-sonnet-5-5", name: "Claude Sonnet 5.5", contextLength: 1000000 },
